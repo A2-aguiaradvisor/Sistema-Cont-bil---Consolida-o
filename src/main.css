@@ -1,90 +1,73 @@
-@import 'tailwindcss';
-@import './theme.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@custom-variant dark (&:is(.dark *));
+@layer base {
+  :root {
+    --background: 210 33% 97%;
+    --foreground: 207 26% 16%;
+    --card: 0 0% 100%;
+    --card-foreground: 207 26% 16%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 207 26% 16%;
+    --primary: 214 73% 16%;
+    --primary-foreground: 210 33% 97%;
+    --secondary: 210 29% 95%;
+    --secondary-foreground: 207 26% 16%;
+    --muted: 210 29% 95%;
+    --muted-foreground: 215 13% 43%;
+    --accent: 207 74% 25%;
+    --accent-foreground: 210 33% 97%;
+    --destructive: 4 76% 39%;
+    --destructive-foreground: 210 33% 97%;
+    --border: 213 26% 89%;
+    --input: 213 26% 89%;
+    --ring: 214 73% 16%;
+    --radius: 0.5rem;
 
-:root {
-  --background: #f7f8fa;
-  --foreground: #1f2933;
-  --card: #ffffff;
-  --card-foreground: #1f2933;
-  --popover: #ffffff;
-  --popover-foreground: #1f2933;
-  --primary: #0b2545;
-  --primary-foreground: #f7f8fa;
-  --secondary: #eef1f5;
-  --secondary-foreground: #1f2933;
-  --muted: #eef1f5;
-  --muted-foreground: #5f6b7a;
-  --accent: #10466e;
-  --accent-foreground: #f7f8fa;
-  --destructive: #b42318;
-  --destructive-foreground: #f7f8fa;
-  --border: #dde3ea;
-  --input: #dde3ea;
-  --ring: #0b2545;
-  --radius: 0.5rem;
+    /* Paleta institucional (navy / petróleo) */
+    --navy: 214 73% 16%;
+    --petrol: 200 71% 29%;
+    --petrol-strong: 207 74% 25%;
+    --surface: 210 33% 97%;
+    --graphite: 207 26% 16%;
+  }
+
+  .dark {
+    --background: 209 39% 7%;
+    --foreground: 210 26% 92%;
+    --card: 211 35% 10%;
+    --card-foreground: 210 26% 92%;
+    --popover: 211 35% 10%;
+    --popover-foreground: 210 26% 92%;
+    --primary: 204 51% 53%;
+    --primary-foreground: 209 39% 7%;
+    --secondary: 208 30% 15%;
+    --secondary-foreground: 210 26% 92%;
+    --muted: 208 30% 15%;
+    --muted-foreground: 215 16% 64%;
+    --accent: 205 71% 29%;
+    --accent-foreground: 210 26% 92%;
+    --destructive: 358 75% 59%;
+    --destructive-foreground: 209 39% 7%;
+    --border: 210 28% 19%;
+    --input: 210 28% 19%;
+    --ring: 204 51% 53%;
+
+    --navy: 214 73% 16%;
+    --petrol: 200 71% 45%;
+    --petrol-strong: 205 71% 29%;
+    --surface: 209 39% 7%;
+    --graphite: 210 26% 92%;
+  }
 }
 
-.dark {
-  --background: #0b1219;
-  --foreground: #e6eaef;
-  --card: #101922;
-  --card-foreground: #e6eaef;
-  --popover: #101922;
-  --popover-foreground: #e6eaef;
-  --primary: #4a90c4;
-  --primary-foreground: #0b1219;
-  --secondary: #1a2530;
-  --secondary-foreground: #e6eaef;
-  --muted: #1a2530;
-  --muted-foreground: #94a3b3;
-  --accent: #15507d;
-  --accent-foreground: #e6eaef;
-  --destructive: #e5484d;
-  --destructive-foreground: #0b1219;
-  --border: #233240;
-  --input: #233240;
-  --ring: #4a90c4;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-
-  /* Paleta institucional */
-  --color-navy: #0b2545;
-  --color-petrol: #155a80;
-  --color-petrol-strong: #10466e;
-  --color-surface: #f7f8fa;
-  --color-graphite: #1f2933;
-}
-
-body {
-  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  color: var(--color-foreground);
-  background: var(--color-background);
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  }
 }

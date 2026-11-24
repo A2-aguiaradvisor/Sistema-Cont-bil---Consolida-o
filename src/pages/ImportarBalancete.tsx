@@ -34,6 +34,7 @@ import {
   Trash2,
   Download,
 } from 'lucide-react'
+import { ImportStepper, derivarEtapaImportacao } from '@/components/ImportStepper'
 
 interface ParsedRow {
   empresa: string
@@ -267,6 +268,17 @@ export const ImportarBalancete: React.FC = () => {
           Baixar Modelo de Planilha
         </Button>
       </div>
+
+      {/* Stepper visual: 6 etapas do fluxo de importação */}
+      <ImportStepper
+        etapa={derivarEtapaImportacao({
+          fileName,
+          processando: isProcessing,
+          totalLinhas: parsedRows.length,
+          invalidas: invalidCount,
+          importado: !!importSummary,
+        })}
+      />
 
       {/* Card de Configurações da Carga */}
       <Card className="border shadow-sm">

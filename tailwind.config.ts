@@ -64,6 +64,13 @@ export default {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        navy: 'hsl(var(--navy))',
+        petrol: {
+          DEFAULT: 'hsl(var(--petrol))',
+          strong: 'hsl(var(--petrol-strong))',
+        },
+        surface: 'hsl(var(--surface))',
+        graphite: 'hsl(var(--graphite))',
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar-background))',
           foreground: 'hsl(var(--sidebar-foreground))',

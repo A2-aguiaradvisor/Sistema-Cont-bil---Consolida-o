@@ -4,6 +4,7 @@
 import {
   LayoutDashboard,
   UploadCloud,
+  Bot,
   FileSpreadsheet,
   GitCompareArrows,
   Scale,
@@ -96,6 +97,7 @@ export const NAV_CATEGORIES: NavCategory[] = [
       { label: 'Conciliações', path: '/conciliacao', icon: ClipboardCheck },
       { label: 'Pendências', icon: AlertTriangle, disabled: true },
       { label: 'Aprovações', icon: Stamp, disabled: true },
+      { label: 'Assistente IA', path: '/assistente', icon: Bot },
       { label: 'Histórico de auditoria', icon: History, disabled: true },
     ],
   },

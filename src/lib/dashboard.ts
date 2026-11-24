@@ -21,15 +21,17 @@ export function computeResumo(rows: BalanceteRecord[]): ResumoFinanceiro {
   const caixa = rows.filter(
     (r) => r.linha_bp === 'Caixa e Equivalentes de Caixa' || r.conta.startsWith('1.1.01'),
   )
-  const passivo = rows.filter((r) => r.linha_bp?.startsWith('Passivo') && r.tipo_conta !== 'PL')
-  const pl = rows.filter((r) => (r as any).tipo_conta === 'PL')
+  const passivo = rows.filter((r) => r.linha_bp?.startsWith('Passivo'))
+  const pl = rows.filter(
+    (r) => r.linha_bp?.startsWith('Patrimônio') || r.linha_bp === 'Patrimônio Líquido',
+  )
   const receita = rows.filter((r) => r.linha_dre?.startsWith('Receita'))
   const resultado = rows.filter((r) => r.linha_dre?.startsWith('Resultado'))
 
   return {
     ativoTotal: somaLinhas(rows, (r) => ativo.includes(r)),
     passivoTotal: somaLinhas(rows, (r) => passivo.includes(r)),
-    plTotal: somaLinhas(rows, (r) => pl.includes(r)),
+    plTotal: somaLinhas(rows, (r) => pl.includes(r)) * -1,
     receitaLiquida: somaLinhas(rows, (r) => receita.includes(r)),
     resultadoLiquido: somaLinhas(rows, (r) => resultado.includes(r)),
     caixaEquivalentes: somaLinhas(rows, (r) => caixa.includes(r)),

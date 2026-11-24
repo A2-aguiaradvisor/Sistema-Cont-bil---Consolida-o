@@ -91,9 +91,7 @@ export function parseValorBr(raw: string): number {
 
 export async function loadDeparaMap(): Promise<Map<string, DeParaRecord>> {
   const list = await deparaService.listAll()
-  return new Map(
-    list.map((d) => [d.conta_origem?.trim(), d].filter(Boolean) as [string, DeParaRecord]),
-  )
+  return new Map(list.map((d) => [d.conta?.trim() ?? '', d] as [string, DeParaRecord]))
 }
 
 /**

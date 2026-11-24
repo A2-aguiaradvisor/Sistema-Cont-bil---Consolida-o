@@ -14,6 +14,7 @@ import DePara from '@/pages/DePara'
 import Eliminacoes from '@/pages/Eliminacoes'
 import BalancoConsolidado from '@/pages/BalancoConsolidado'
 import DRE from '@/pages/DRE'
+import Assistente from '@/pages/Assistente'
 import Login from '@/pages/Login'
 import NotFound from '@/pages/NotFound'
 
@@ -95,6 +96,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <DRE />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/assistente"
+              element={
+                <ProtectedRoute>
+                  <Assistente />
                 </ProtectedRoute>
               }
             />

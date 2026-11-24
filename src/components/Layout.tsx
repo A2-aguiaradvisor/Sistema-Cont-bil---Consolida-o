@@ -1,7 +1,7 @@
 // Layout da aplicação: sidebar fixa com categorias + busca global + área de conteúdo.
 
 import React, { useState, useMemo } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Building2, LogOut, Search, Menu, X, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -182,7 +182,7 @@ const SidebarContent: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) =
   )
 }
 
-export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const Layout: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -282,7 +282,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         </header>
 
         <main className="flex-1 overflow-y-auto bg-surface">
-          <div className="mx-auto max-w-7xl px-4 py-6 lg:px-6">{children}</div>
+          <div className="mx-auto max-w-7xl px-4 py-6 lg:px-6">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
