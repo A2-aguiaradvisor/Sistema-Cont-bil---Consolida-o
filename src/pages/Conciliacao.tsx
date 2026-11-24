@@ -95,7 +95,10 @@ export const Conciliacao: React.FC = () => {
   }, [])
 
   const empresas = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.empresa))).filter(Boolean).sort(),
+    () =>
+      Array.from(new Set(rows.map((r) => r.empresa)))
+        .filter(Boolean)
+        .sort(),
     [rows],
   )
   const periodos = useMemo(
@@ -161,9 +164,7 @@ export const Conciliacao: React.FC = () => {
       }
     }
 
-    return linhas.filter(
-      (l) => demonstracao === 'TODAS' || l.demonstracao === demonstracao,
-    )
+    return linhas.filter((l) => demonstracao === 'TODAS' || l.demonstracao === demonstracao)
   }, [rows, empresa, periodo, demonstracao])
 
   const resumo = useMemo(() => {
@@ -203,8 +204,7 @@ export const Conciliacao: React.FC = () => {
       <div className="border-b border-slate-200 pb-4">
         <h1 className="text-xl font-semibold text-graphite">Painel de Conciliação</h1>
         <p className="mt-0.5 text-xs text-slate-500">
-          Validações contábeis derivadas dos saldos importados — quadratura e conferência de
-          saldos.
+          Validações contábeis derivadas dos saldos importados — quadratura e conferência de saldos.
         </p>
       </div>
 
@@ -214,11 +214,15 @@ export const Conciliacao: React.FC = () => {
           <div className="space-y-1">
             <Label className="text-[11px] text-slate-500">Empresa</Label>
             <Select value={empresa} onValueChange={setEmpresa}>
-              <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="TODAS">Todas</SelectItem>
                 {empresas.map((e) => (
-                  <SelectItem key={e} value={e}>{e}</SelectItem>
+                  <SelectItem key={e} value={e}>
+                    {e}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -226,11 +230,15 @@ export const Conciliacao: React.FC = () => {
           <div className="space-y-1">
             <Label className="text-[11px] text-slate-500">Período</Label>
             <Select value={periodo} onValueChange={setPeriodo}>
-              <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="TODOS">Todos</SelectItem>
                 {periodos.map((p) => (
-                  <SelectItem key={p} value={p}>{p}</SelectItem>
+                  <SelectItem key={p} value={p}>
+                    {p}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -238,7 +246,9 @@ export const Conciliacao: React.FC = () => {
           <div className="space-y-1">
             <Label className="text-[11px] text-slate-500">Demonstração</Label>
             <Select value={demonstracao} onValueChange={setDemonstracao}>
-              <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="TODAS">Todas</SelectItem>
                 <SelectItem value="Balanço Patrimonial">Balanço Patrimonial</SelectItem>
@@ -249,10 +259,14 @@ export const Conciliacao: React.FC = () => {
           <div className="space-y-1">
             <Label className="text-[11px] text-slate-500">Escala</Label>
             <Select value={scale} onValueChange={(v) => setScale(v as UnitScale)}>
-              <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {UNITS.map((u) => (
-                  <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                  <SelectItem key={u.value} value={u.value}>
+                    {u.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>

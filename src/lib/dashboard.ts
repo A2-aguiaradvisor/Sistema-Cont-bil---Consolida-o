@@ -21,9 +21,7 @@ export function computeResumo(rows: BalanceteRecord[]): ResumoFinanceiro {
   const caixa = rows.filter(
     (r) => r.linha_bp === 'Caixa e Equivalentes de Caixa' || r.conta.startsWith('1.1.01'),
   )
-  const passivo = rows.filter(
-    (r) => r.linha_bp?.startsWith('Passivo') && r.tipo_conta !== 'PL',
-  )
+  const passivo = rows.filter((r) => r.linha_bp?.startsWith('Passivo') && r.tipo_conta !== 'PL')
   const pl = rows.filter((r) => (r as any).tipo_conta === 'PL')
   const receita = rows.filter((r) => r.linha_dre?.startsWith('Receita'))
   const resultado = rows.filter((r) => r.linha_dre?.startsWith('Resultado'))

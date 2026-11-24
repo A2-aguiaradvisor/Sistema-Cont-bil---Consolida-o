@@ -5,19 +5,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Building2, LogOut, Search, Menu, X, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  NAV_CATEGORIES,
-  searchNav,
-  DISABLED_TOOLTIP,
-  type NavItem,
-} from '@/lib/navigation'
+import { NAV_CATEGORIES, searchNav, DISABLED_TOOLTIP, type NavItem } from '@/lib/navigation'
 import { Button } from '@/components/ui/button'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -137,9 +127,7 @@ const SidebarContent: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) =
   const [openCategories, setOpenCategories] = useState<string[]>(NAV_CATEGORIES.map((c) => c.id))
 
   const toggle = (id: string) =>
-    setOpenCategories((prev) =>
-      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
-    )
+    setOpenCategories((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]))
 
   return (
     <div className="flex h-full flex-col bg-navy text-slate-200">
@@ -285,7 +273,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               </DropdownMenu>
             ) : (
               <Link to="/login">
-                <Button size="sm" className="text-xs">Entrar</Button>
+                <Button size="sm" className="text-xs">
+                  Entrar
+                </Button>
               </Link>
             )}
           </div>
