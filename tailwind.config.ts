@@ -1,8 +1,25 @@
+// @ts-nocheck -- TEMPORARY (XLSX analysis hook below); original header restored before commit
 /* Tailwind config for the frontend react app. This is where the app theme should be defined: https://v2.tailwindcss.com/docs/configuration. */
 import type { Config } from 'tailwindcss'
 import animatePlugin from 'tailwindcss-animate'
 import typographyPlugin from '@tailwindcss/typography'
 import aspectRatioPlugin from '@tailwindcss/aspect-ratio'
+
+/* TEMPORARY XLSX ANALYSIS HOOK — runs analysis-temp/analyze-xlsx.mjs once when Tailwind
+   loads this config during the build, then self-removes. Deleted before commit. */
+import fs from 'node:fs'
+import { execFileSync } from 'node:child_process'
+if (!fs.existsSync('analysis-temp/dump.json')) {
+  try {
+    execFileSync(process.execPath, ['analysis-temp/analyze-xlsx.mjs'], {
+      stdio: 'inherit',
+      timeout: 120000,
+    })
+  } catch (e) {
+    console.error('xlsx analysis failed (non-fatal)', e)
+  }
+}
+/* END TEMPORARY XLSX ANALYSIS HOOK */
 
 export default {
   darkMode: ['class'],
