@@ -107,14 +107,36 @@ export function splitCsvLine(line: string, sep: string): string[] {
   return cols.map((c) => c.trim())
 }
 
+/** Normaliza um cabeçalho para comparação: minúsculas, sem acentos, pontos ou underlines. */
+export function normalizarHeader(h: string): string {
+  return (h ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[._]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function splitHeaders(firstLine: string, sep: string): string[] {
-  return splitCsvLine(normalizarTexto(firstLine), sep).map((h) =>
-    h.trim().toLowerCase().replace(/\./g, ''),
-  )
+  return splitCsvLine(normalizarTexto(firstLine), sep).map(normalizarHeader)
 }
 
 function findCol(headers: string[], ...terms: string[]): number {
-  return headers.findIndex((h) => terms.some((t) => h === t || h.startsWith(t)))
+  const norm = headers.map(normalizarHeader)
+  const semEspaco = (s: string) => s.replace(/\s/g, '')
+  return norm.findIndex((h) =>
+    terms.some((t) => {
+      const tn = normalizarHeader(t)
+      return (
+        h === tn ||
+        h.startsWith(tn) ||
+        semEspaco(h) === semEspaco(tn) ||
+        h.replace(/s$/, '') === tn.replace(/s$/, '')
+      )
+    }),
+  )
 }
 
 /** Detecção automática de colunas a partir dos cabeçalhos (tolerante a variações do Excel). */

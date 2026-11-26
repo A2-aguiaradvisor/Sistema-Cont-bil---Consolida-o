@@ -93,9 +93,9 @@ export const Balancete: React.FC = () => {
   const balancetesFiltrados = useMemo(() => {
     return balancetes.filter((item) => {
       if (filtroEmpresa !== 'TODAS' && item.empresa !== filtroEmpresa) return false
-      if (filtroPeriodo !== 'TODAS' && item.periodo !== filtroPeriodo) return false
-      if (filtroLinhaBP !== 'TODAS' && item.linha_bp !== filtroLinhaBP) return false
-      if (filtroLinhaDRE !== 'TODAS' && item.linha_dre !== filtroLinhaDRE) return false
+      if (filtroPeriodo !== 'TODOS' && item.periodo !== filtroPeriodo) return false
+      if (filtroLinhaBP !== 'TODOS' && item.linha_bp !== filtroLinhaBP) return false
+      if (filtroLinhaDRE !== 'TODOS' && item.linha_dre !== filtroLinhaDRE) return false
 
       if (filtroBusca.trim()) {
         const busca = filtroBusca.toLowerCase()
@@ -110,19 +110,23 @@ export const Balancete: React.FC = () => {
     })
   }, [balancetes, filtroEmpresa, filtroPeriodo, filtroLinhaBP, filtroLinhaDRE, filtroBusca])
 
-  // Totais calculados
-  const { totalDebitos, totalCreditos, saldoFinal } = useMemo(() => {
+  // Totais calculados — das 4 colunas de saldo gravadas pela importação
+  const { totalDebitos, totalCreditos, saldoInicial, saldoFinal } = useMemo(() => {
+    let si = 0
     let deb = 0
     let cred = 0
+    let sf = 0
     for (const b of balancetesFiltrados) {
-      const v = Number(b.saldo) || 0
-      if (b.natureza === 'D') deb += Math.abs(v)
-      else cred += Math.abs(v)
+      si += Number(b.saldo_inicial) || 0
+      deb += Number(b.debitos) || 0
+      cred += Number(b.creditos) || 0
+      sf += Number(b.saldo_final ?? b.saldo) || 0
     }
     return {
+      saldoInicial: si,
       totalDebitos: deb,
       totalCreditos: cred,
-      saldoFinal: deb - cred,
+      saldoFinal: sf,
     }
   }, [balancetesFiltrados])
 
@@ -139,11 +143,15 @@ export const Balancete: React.FC = () => {
   const handleOpenCreate = () => {
     setEditItem({
       empresa: filtroEmpresa !== 'TODAS' ? filtroEmpresa : 'ALFA',
-      periodo: filtroPeriodo !== 'TODAS' ? filtroPeriodo : 'Dez/25',
-      ano: 2025,
+      periodo: filtroPeriodo !== 'TODOS' ? filtroPeriodo : '',
+      ano: new Date().getFullYear(),
       conta: '',
       descricao: '',
       saldo: 0,
+      saldo_inicial: 0,
+      debitos: 0,
+      creditos: 0,
+      saldo_final: 0,
       natureza: 'D',
       linha_bp: '',
       linha_dre: '',
@@ -253,7 +261,7 @@ export const Balancete: React.FC = () => {
                   <SelectValue placeholder="Período" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="TODAS" className="text-xs">
+                  <SelectItem value="TODOS" className="text-xs">
                     Todos os Períodos
                   </SelectItem>
                   {periodosDisponiveis.map((p) => (
@@ -273,7 +281,7 @@ export const Balancete: React.FC = () => {
                   <SelectValue placeholder="Linha BP" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="TODAS" className="text-xs">
+                  <SelectItem value="TODOS" className="text-xs">
                     Todas as Linhas BP
                   </SelectItem>
                   {linhasBPDisponiveis.map((lb) => (
@@ -293,7 +301,7 @@ export const Balancete: React.FC = () => {
                   <SelectValue placeholder="Linha DRE" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="TODAS" className="text-xs">
+                  <SelectItem value="TODOS" className="text-xs">
                     Todas as Linhas DRE
                   </SelectItem>
                   {linhasDREDisponiveis.map((ld) => (
@@ -324,32 +332,32 @@ export const Balancete: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Resumo de Totais do Balancete */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-3.5 bg-card border rounded-lg shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Total Devedor
-            </span>
-            <div className="text-lg font-bold text-foreground">{formatMoeda(totalDebitos)}</div>
-          </div>
-          <Badge variant="outline" className="text-blue-700 bg-blue-50">
-            D
-          </Badge>
+      {/* Resumo de Totais do Balancete — as 4 colunas de saldo gravadas pela importação */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="p-3.5 bg-card border rounded-lg shadow-sm">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Saldo Inicial
+          </span>
+          <div className="text-lg font-bold text-foreground">{formatMoeda(saldoInicial)}</div>
         </div>
-
-        <div className="p-3.5 bg-card border rounded-lg shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-              Total Credor
-            </span>
-            <div className="text-lg font-bold text-foreground">{formatMoeda(totalCreditos)}</div>
-          </div>
-          <Badge variant="outline" className="text-rose-700 bg-rose-50">
-            C
-          </Badge>
+        <div className="p-3.5 bg-card border rounded-lg shadow-sm">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Débitos
+          </span>
+          <div className="text-lg font-bold text-foreground">{formatMoeda(totalDebitos)}</div>
         </div>
-
+        <div className="p-3.5 bg-card border rounded-lg shadow-sm">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Créditos
+          </span>
+          <div className="text-lg font-bold text-foreground">{formatMoeda(totalCreditos)}</div>
+        </div>
+        <div className="p-3.5 bg-card border rounded-lg shadow-sm">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Saldo Final
+          </span>
+          <div className="text-lg font-bold text-foreground">{formatMoeda(saldoFinal)}</div>
+        </div>
         <div className="p-3.5 bg-card border rounded-lg shadow-sm flex items-center justify-between">
           <div>
             <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -374,7 +382,10 @@ export const Balancete: React.FC = () => {
                   <th className="py-2.5 px-3">Período</th>
                   <th className="py-2.5 px-3">Conta</th>
                   <th className="py-2.5 px-3">Descrição da Conta</th>
-                  <th className="py-2.5 px-3 text-right">Saldo</th>
+                  <th className="py-2.5 px-3 text-right">Saldo Inicial</th>
+                  <th className="py-2.5 px-3 text-right">Débitos</th>
+                  <th className="py-2.5 px-3 text-right">Créditos</th>
+                  <th className="py-2.5 px-3 text-right">Saldo Final</th>
                   <th className="py-2.5 px-3 text-center">Nat</th>
                   <th className="py-2.5 px-3">Linha BP</th>
                   <th className="py-2.5 px-3">Linha DRE</th>
@@ -400,7 +411,16 @@ export const Balancete: React.FC = () => {
                       {item.descricao}
                     </td>
                     <td className="py-2.5 px-3 text-right font-bold text-foreground">
-                      {formatMoeda(item.saldo)}
+                      {formatMoeda(item.saldo_inicial ?? 0)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-foreground">
+                      {formatMoeda(item.debitos ?? 0)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono text-foreground">
+                      {formatMoeda(item.creditos ?? 0)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-bold text-foreground">
+                      {formatMoeda(item.saldo_final ?? item.saldo ?? 0)}
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <Badge
@@ -455,7 +475,7 @@ export const Balancete: React.FC = () => {
                 ))}
                 {balancetesFiltrados.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="py-8 text-center text-muted-foreground text-xs">
+                    <td colSpan={13} className="py-8 text-center text-muted-foreground text-xs">
                       Nenhuma conta localizada com os filtros aplicados.
                     </td>
                   </tr>
@@ -542,24 +562,63 @@ export const Balancete: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">Saldo</Label>
+                  <Label className="text-xs">Saldo Inicial</Label>
                   <Input
                     type="number"
                     step="0.01"
-                    value={editItem.saldo ?? 0}
+                    value={editItem.saldo_inicial ?? 0}
                     onChange={(e) =>
-                      setEditItem({ ...editItem, saldo: parseFloat(e.target.value) || 0 })
+                      setEditItem({ ...editItem, saldo_inicial: parseFloat(e.target.value) || 0 })
                     }
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Código da Nota</Label>
+                  <Label className="text-xs">Saldo Final</Label>
                   <Input
-                    value={editItem.cod_nota || ''}
-                    onChange={(e) => setEditItem({ ...editItem, cod_nota: e.target.value })}
-                    placeholder="03"
+                    type="number"
+                    step="0.01"
+                    value={editItem.saldo_final ?? editItem.saldo ?? 0}
+                    onChange={(e) =>
+                      setEditItem({
+                        ...editItem,
+                        saldo_final: parseFloat(e.target.value) || 0,
+                        saldo: parseFloat(e.target.value) || 0,
+                      })
+                    }
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Débitos</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editItem.debitos ?? 0}
+                    onChange={(e) =>
+                      setEditItem({ ...editItem, debitos: parseFloat(e.target.value) || 0 })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Créditos</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={editItem.creditos ?? 0}
+                    onChange={(e) =>
+                      setEditItem({ ...editItem, creditos: parseFloat(e.target.value) || 0 })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Código da Nota</Label>
+                <Input
+                  value={editItem.cod_nota || ''}
+                  onChange={(e) => setEditItem({ ...editItem, cod_nota: e.target.value })}
+                  placeholder="03"
+                />
               </div>
 
               <div className="space-y-1">
