@@ -1,5 +1,10 @@
 import pb from '@/lib/pocketbase/client'
-import type { BalanceteRecord, DeParaRecord } from '@/types/accounting'
+import type {
+  BalanceteRecord,
+  DeParaRecord,
+  EstruturaBalancoRecord,
+  EliminacaoRecord,
+} from '@/types/accounting'
 
 // Camada de acesso ao PocketBase para as coleções contábeis.
 
@@ -52,20 +57,20 @@ export const deparaService = {
 }
 
 export const estruturaService = {
-  async listAll(tipo?: 'BP' | 'DRE') {
+  async listAll(tipo?: 'BP' | 'DRE'): Promise<EstruturaBalancoRecord[]> {
     const filter = tipo ? `tipo='${tipo}'` : undefined
     const list = await pb.collection('estrutura_balanco').getFullList({
       sort: 'ordem',
       filter,
     })
-    return list as unknown as Array<Record<string, unknown> & { id: string }>
+    return list as unknown as EstruturaBalancoRecord[]
   },
 }
 
 export const eliminacoesService = {
-  async listAll() {
+  async listAll(): Promise<EliminacaoRecord[]> {
     const list = await pb.collection('eliminacoes').getFullList({ sort: '-created' })
-    return list as unknown as Array<Record<string, unknown> & { id: string }>
+    return list as unknown as EliminacaoRecord[]
   },
   /** Eliminações de um período; opcionalmente filtradas pelo quadro (BP/DRE). */
   async listByPeriodo(periodo: string, tipoQuadro?: 'BP' | 'DRE') {

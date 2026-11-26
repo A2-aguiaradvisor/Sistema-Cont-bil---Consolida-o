@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-26T14:01:41.950Z",
+  "generatedAt": "2026-11-26T14:16:58.823Z",
   "collections": [
     {
       "name": "users",
@@ -291,11 +291,60 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "saldo_inicial",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "debitos",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "creditos",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "saldo_final",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "moeda",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "centro_custo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "segmento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "lote",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [
         "CREATE INDEX idx_balancetes_emp_per ON balancetes (empresa, ano, periodo)",
-        "CREATE INDEX idx_balancetes_conta ON balancetes (conta)"
+        "CREATE INDEX idx_balancetes_conta ON balancetes (conta)",
+        "CREATE UNIQUE INDEX `idx_balancetes_emp_per_conta` ON `balancetes` (empresa, periodo, conta)"
       ]
     },
     {
