@@ -107,3 +107,8 @@ export const rowLevelStyles: Record<RowLevel, RowLevelStyle> = {
 export const chartBarColor = (value: number): string => (value < 0 ? '#b42318' : '#0b2545')
 
 export const CHART_COLORS = ['#0b2545', '#155a80', '#6b8fae', '#12805c', '#b58a0b']
+
+/** Formata um valor monetário pt-BR com 2 decimais (unidades plenas). */
+export function formatMoeda(value: number): string {
+  return formatValor(value, 'unidade')
+}

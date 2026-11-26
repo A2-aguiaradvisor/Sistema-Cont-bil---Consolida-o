@@ -1,17 +1,29 @@
+// Tipos das coleções contábeis do PocketBase.
+
 export interface BalanceteRecord {
   id: string
   empresa: string
   ano: number
-  periodo: string // ex: "Dez/25"
-  conta: string // ex: "1.1.01.001"
+  periodo: string // "2024-08"
+  conta: string
   descricao: string
+  // Regra permanente: os 4 saldos, nunca só o saldo final
   saldo: number
+  saldo_inicial: number
+  debitos: number
+  creditos: number
+  saldo_final: number
   natureza: 'D' | 'C'
+  moeda?: string
+  centro_custo?: string
+  segmento?: string
+  lote?: string
   linha_bp?: string
   linha_dre?: string
   cod_nota?: string
   created?: string
   updated?: string
+  [key: string]: unknown // PocketBase devolve campos extras (expand etc.)
 }
 
 export interface DeParaRecord {
@@ -34,12 +46,10 @@ export interface EstruturaBalancoRecord {
   grupo: string
   linha: string
   cod_nota?: string
-  nivel: number // 1: Total, 2: Subtotal/Grupo, 3: Linha analítica
+  nivel: number
   ordem: number
   natureza: 'D' | 'C'
-  is_total?: boolean
-  created?: string
-  updated?: string
+  is_total: boolean
 }
 
 export interface EliminacaoRecord {
@@ -58,10 +68,6 @@ export interface EliminacaoRecord {
 }
 
 export interface QuadraturaStatus {
-  ativoTotal: number
-  passivoTotal: number
-  plTotal: number
-  passivoMaisPL: number
+  quadrado: boolean
   diferenca: number
-  isQuadrado: boolean
 }

@@ -1,181 +1,139 @@
 import pb from '@/lib/pocketbase/client'
-import type {
-  BalanceteRecord,
-  DeParaRecord,
-  EstruturaBalancoRecord,
-  EliminacaoRecord,
-} from '@/types/accounting'
+import type { BalanceteRecord, DeParaRecord } from '@/types/accounting'
+
+// Camada de acesso ao PocketBase para as coleções contábeis.
 
 export const balancetesService = {
-  async listAll(filter?: string, sort = 'conta'): Promise<BalanceteRecord[]> {
-    return await pb.collection('balancetes').getFullList<BalanceteRecord>({
-      filter: filter || '',
-      sort,
-      requestKey: null,
+  async listAll(): Promise<BalanceteRecord[]> {
+    const list = await pb.collection('balancetes').getFullList({
+      sort: 'empresa,periodo,conta',
     })
+    return list as unknown as BalanceteRecord[]
   },
-
+  async listByPeriodo(empresa: string, ano: number, periodo: string): Promise<BalanceteRecord[]> {
+    const list = await pb
+      .collection('balancetes')
+      .getFullList({ filter: `empresa='${empresa}' && ano=${ano} && periodo='${periodo}'` })
+    return list as unknown as BalanceteRecord[]
+  },
+  /** Períodos distintos existentes no balancete ("2024-08"), mais recentes primeiro. */
   async listPeriodos(): Promise<string[]> {
-    const records = await pb.collection('balancetes').getFullList<{ periodo: string }>({
-      fields: 'periodo',
-      sort: '-ano,-periodo',
-      requestKey: null,
-    })
-    const unique = Array.from(new Set(records.map((r) => r.periodo))).filter(Boolean)
-    return unique.length > 0 ? unique : ['Dez/25', 'Dez/24']
+    const list = await pb.collection('balancetes').getFullList({ fields: 'periodo' })
+    return Array.from(new Set(list.map((r) => (r as { periodo?: string }).periodo ?? '')))
+      .filter(Boolean)
+      .sort()
+      .reverse()
   },
-
-  async listEmpresas(): Promise<string[]> {
-    const records = await pb.collection('balancetes').getFullList<{ empresa: string }>({
-      fields: 'empresa',
-      sort: 'empresa',
-      requestKey: null,
-    })
-    const unique = Array.from(new Set(records.map((r) => r.empresa))).filter(Boolean)
-    return unique.length > 0 ? unique : ['ALFA', 'BETA']
+  async create(data: Partial<BalanceteRecord>): Promise<BalanceteRecord> {
+    return (await pb.collection('balancetes').create(data)) as unknown as BalanceteRecord
   },
-
-  async deleteByEmpresaPeriodo(empresa: string, periodo: string): Promise<number> {
-    const toDelete = await pb.collection('balancetes').getFullList<BalanceteRecord>({
-      filter: `empresa = "${empresa}" && periodo = "${periodo}"`,
-      requestKey: null,
-    })
-    for (const item of toDelete) {
-      await pb.collection('balancetes').delete(item.id)
-    }
-    return toDelete.length
-  },
-
-  async create(
-    data: Omit<BalanceteRecord, 'id' | 'created' | 'updated'>,
-  ): Promise<BalanceteRecord> {
-    return await pb.collection('balancetes').create<BalanceteRecord>(data)
-  },
-
-  async importBatch(
-    records: Omit<BalanceteRecord, 'id' | 'created' | 'updated'>[],
-    replaceExisting = true,
-  ): Promise<{ imported: number; replaced: number }> {
-    if (records.length === 0) return { imported: 0, replaced: 0 }
-
-    let replacedCount = 0
-    if (replaceExisting) {
-      const distinctTargets = Array.from(new Set(records.map((r) => `${r.empresa}___${r.periodo}`)))
-      for (const target of distinctTargets) {
-        const [emp, per] = target.split('___')
-        const delCount = await this.deleteByEmpresaPeriodo(emp, per)
-        replacedCount += delCount
-      }
-    }
-
-    // Cria os novos registros
-    for (const record of records) {
-      await pb.collection('balancetes').create(record)
-    }
-
-    return { imported: records.length, replaced: replacedCount }
-  },
-
   async update(id: string, data: Partial<BalanceteRecord>): Promise<BalanceteRecord> {
-    return await pb.collection('balancetes').update<BalanceteRecord>(id, data)
+    return (await pb.collection('balancetes').update(id, data)) as unknown as BalanceteRecord
   },
-
-  async delete(id: string): Promise<boolean> {
-    return await pb.collection('balancetes').delete(id)
+  async delete(id: string): Promise<void> {
+    await pb.collection('balancetes').delete(id)
   },
 }
 
 export const deparaService = {
-  async listAll(filter?: string, sort = 'conta'): Promise<DeParaRecord[]> {
-    return await pb.collection('depara').getFullList<DeParaRecord>({
-      filter: filter || '',
-      sort,
-      requestKey: null,
-    })
+  async listAll(): Promise<DeParaRecord[]> {
+    const list = await pb.collection('depara').getFullList({ sort: 'conta' })
+    return list as unknown as DeParaRecord[]
   },
-
-  async getMap(): Promise<Map<string, DeParaRecord>> {
-    const items = await this.listAll()
-    const map = new Map<string, DeParaRecord>()
-    for (const item of items) {
-      map.set(item.conta.trim(), item)
-    }
-    return map
+  async create(data: Partial<DeParaRecord>): Promise<DeParaRecord> {
+    return (await pb.collection('depara').create(data)) as unknown as DeParaRecord
   },
-
-  async create(data: Omit<DeParaRecord, 'id' | 'created' | 'updated'>): Promise<DeParaRecord> {
-    return await pb.collection('depara').create<DeParaRecord>(data)
-  },
-
   async update(id: string, data: Partial<DeParaRecord>): Promise<DeParaRecord> {
-    return await pb.collection('depara').update<DeParaRecord>(id, data)
+    return (await pb.collection('depara').update(id, data)) as unknown as DeParaRecord
   },
-
-  async delete(id: string): Promise<boolean> {
-    return await pb.collection('depara').delete(id)
-  },
-
-  async upsert(data: Omit<DeParaRecord, 'id' | 'created' | 'updated'>): Promise<DeParaRecord> {
-    const existing = await pb.collection('depara').getList<DeParaRecord>(1, 1, {
-      filter: `conta = "${data.conta.trim()}"`,
-      requestKey: null,
-    })
-    if (existing.items.length > 0) {
-      return await pb.collection('depara').update<DeParaRecord>(existing.items[0].id, data)
-    }
-    return await pb.collection('depara').create<DeParaRecord>(data)
+  async delete(id: string): Promise<void> {
+    await pb.collection('depara').delete(id)
   },
 }
 
 export const estruturaService = {
-  async listAll(tipo?: 'BP' | 'DRE'): Promise<EstruturaBalancoRecord[]> {
-    const filter = tipo ? `tipo = "${tipo}"` : ''
-    return await pb.collection('estrutura_balanco').getFullList<EstruturaBalancoRecord>({
-      filter,
+  async listAll(tipo?: 'BP' | 'DRE') {
+    const filter = tipo ? `tipo='${tipo}'` : undefined
+    const list = await pb.collection('estrutura_balanco').getFullList({
       sort: 'ordem',
-      requestKey: null,
+      filter,
     })
-  },
-
-  async create(
-    data: Omit<EstruturaBalancoRecord, 'id' | 'created' | 'updated'>,
-  ): Promise<EstruturaBalancoRecord> {
-    return await pb.collection('estrutura_balanco').create<EstruturaBalancoRecord>(data)
-  },
-
-  async update(id: string, data: Partial<EstruturaBalancoRecord>): Promise<EstruturaBalancoRecord> {
-    return await pb.collection('estrutura_balanco').update<EstruturaBalancoRecord>(id, data)
-  },
-
-  async delete(id: string): Promise<boolean> {
-    return await pb.collection('estrutura_balanco').delete(id)
+    return list as unknown as Array<Record<string, unknown> & { id: string }>
   },
 }
 
 export const eliminacoesService = {
-  async listByPeriodo(periodo: string, tipo?: 'BP' | 'DRE'): Promise<EliminacaoRecord[]> {
-    let filter = `periodo = "${periodo}"`
-    if (tipo) {
-      filter += ` && tipo_quadro = "${tipo}"`
-    }
-    return await pb.collection('eliminacoes').getFullList<EliminacaoRecord>({
-      filter,
-      sort: '-created',
-      requestKey: null,
-    })
+  async listAll() {
+    const list = await pb.collection('eliminacoes').getFullList({ sort: '-created' })
+    return list as unknown as Array<Record<string, unknown> & { id: string }>
   },
-
-  async create(
-    data: Omit<EliminacaoRecord, 'id' | 'created' | 'updated'>,
-  ): Promise<EliminacaoRecord> {
-    return await pb.collection('eliminacoes').create<EliminacaoRecord>(data)
+  /** Eliminações de um período; opcionalmente filtradas pelo quadro (BP/DRE). */
+  async listByPeriodo(periodo: string, tipoQuadro?: 'BP' | 'DRE') {
+    const filtro = tipoQuadro
+      ? `periodo='${periodo}' && tipo_quadro='${tipoQuadro}'`
+      : `periodo='${periodo}'`
+    const list = await pb.collection('eliminacoes').getFullList({ filter: filtro })
+    return list as unknown as EliminacaoRecord[]
   },
-
+  async create(data: Partial<EliminacaoRecord>): Promise<EliminacaoRecord> {
+    return (await pb.collection('eliminacoes').create(data)) as unknown as EliminacaoRecord
+  },
   async update(id: string, data: Partial<EliminacaoRecord>): Promise<EliminacaoRecord> {
-    return await pb.collection('eliminacoes').update<EliminacaoRecord>(id, data)
+    return (await pb.collection('eliminacoes').update(id, data)) as unknown as EliminacaoRecord
   },
+  async delete(id: string): Promise<void> {
+    await pb.collection('eliminacoes').delete(id)
+  },
+}
 
-  async delete(id: string): Promise<boolean> {
-    return await pb.collection('eliminacoes').delete(id)
-  },
+/** Identificador de lote para rastreabilidade da importação. */
+export function gerarLote(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `IMP-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+}
+
+/**
+ * Reimporta um lote inteiro de balancete: apaga as linhas existentes do mesmo
+ * (empresa, ano, periodo) e grava as novas — sem duplicar contas.
+ */
+export async function importarBalanceteLote(
+  linhas: Array<Partial<BalanceteRecord> & { conta: string }>,
+  chave: { empresa: string; ano: number; periodo: string },
+): Promise<number> {
+  const existentes = await pb.collection('balancetes').getFullList({
+    filter: `empresa='${chave.empresa}' && ano=${chave.ano} && periodo='${chave.periodo}'`,
+    fields: 'id',
+  })
+  for (const rec of existentes) {
+    await pb.collection('balancetes').delete(rec.id)
+  }
+  for (const linha of linhas) {
+    await pb.collection('balancetes').create(linha)
+  }
+  return linhas.length
+}
+
+/**
+ * Importa o De-Para em lote: atualiza quem já existe (por `conta`, índice único)
+ * e cria os novos — substitui o mapeamento sem duplicar.
+ */
+export async function importarDeParaLote(
+  linhas: Array<Partial<DeParaRecord> & { conta: string; descricao: string }>,
+): Promise<{ criados: number; atualizados: number }> {
+  const existentes = await deparaService.listAll()
+  const porConta = new Map(existentes.map((d) => [d.conta?.trim() ?? '', d]))
+  let criados = 0
+  let atualizados = 0
+  for (const linha of linhas) {
+    const alvo = porConta.get(linha.conta.trim())
+    if (alvo) {
+      await deparaService.update(alvo.id, linha)
+      atualizados++
+    } else {
+      await deparaService.create(linha)
+      criados++
+    }
+  }
+  return { criados, atualizados }
 }

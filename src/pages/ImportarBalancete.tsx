@@ -1,18 +1,39 @@
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { balancetesService, deparaService } from '@/services/accounting'
-import type { BalanceteRecord, DeParaRecord } from '@/types/accounting'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from '@/hooks/use-toast'
+import { useAuth } from '@/contexts/AuthContext'
 import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-  CardFooter,
-} from '@/components/ui/card'
+  autoDetectColMap,
+  parseDePara,
+  parseRows,
+  loadDeparaMap,
+  CSV_MODELO_BALANCETE,
+  CSV_MODELO_DEPARA,
+  CONTA_AJUSTE,
+  type ColumnMap,
+  type ParseDefaults,
+  type ParseError,
+  type ParsedDeParaRow,
+  type ParsedRow,
+} from '@/lib/importParser'
+import {
+  balancetesService,
+  deparaService,
+  estruturaService,
+  gerarLote,
+  importarBalanceteLote,
+  importarDeParaLote,
+} from '@/services/accounting'
+import type { BalanceteRecord, DeParaRecord } from '@/types/accounting'
+import { ImportStepper } from '@/components/ImportStepper'
+import { formatMoeda } from '@/lib/visual'
+import { AlertTriangle, CheckCircle2, FileSpreadsheet, Info } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Progress } from '@/components/ui/progress'
 import {
   Select,
   SelectContent,
@@ -20,550 +41,580 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Switch } from '@/components/ui/switch'
+import { Separator } from '@/components/ui/separator'
 import {
-  UploadCloud,
-  FileSpreadsheet,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowRight,
-  RefreshCw,
-  Info,
-  Trash2,
-  Download,
-} from 'lucide-react'
-import { ImportStepper, derivarEtapaImportacao } from '@/components/ImportStepper'
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-interface ParsedRow {
-  empresa: string
-  ano: number
-  periodo: string
-  conta: string
-  descricao: string
-  saldo: number
-  natureza: 'D' | 'C'
-  linha_bp?: string
-  linha_dre?: string
-  cod_nota?: string
-  erros: string[]
-  isValid: boolean
+interface ImportarBalanceteProps {
+  tipoArquivo?: 'balancete' | 'depara'
 }
 
-export const ImportarBalancete: React.FC = () => {
-  const navigate = useNavigate()
-  const [empresaDefault, setEmpresaDefault] = useState('ALFA')
-  const [periodoDefault, setPeriodoDefault] = useState('Dez/25')
-  const [anoDefault, setAnoDefault] = useState('2025')
-  const [replaceExisting, setReplaceExisting] = useState(true)
+type EtapaImportador = 'selecionar' | 'mapear' | 'validar' | 'previa' | 'concluido'
 
-  const [fileName, setFileName] = useState<string | null>(null)
-  const [parsedRows, setParsedRows] = useState<ParsedRow[]>([])
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
-  const [importSummary, setImportSummary] = useState<{ imported: number; replaced: number } | null>(
-    null,
-  )
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+export function ImportarBalancete({ tipoArquivo = 'balancete' }: ImportarBalanceteProps) {
+  const { user } = useAuth()
+  const [arquivo, setArquivo] = useState<File | null>(null)
+  const [texto, setTexto] = useState<string>('')
+  const [etapa, setEtapa] = useState<EtapaImportador>('selecionar')
+  const [progesso, setProgesso] = useState(0)
+  const [colMap, setColMap] = useState<ColumnMap | null>(null)
+  const [headers, setHeaders] = useState<string[]>([])
+  const [defaults, setDefaults] = useState<ParseDefaults>({
+    empresa: '',
+    periodo: '',
+    ano: '',
+  })
+  const [rowsBalancete, setRowsBalancete] = useState<ParsedRow[]>([])
+  const [rowsDepara, setRowsDepara] = useState<ParsedDeParaRow[]>([])
+  const [fatalError, setFatalError] = useState<string | null>(null)
+  const [deparaMap, setDeparaMap] = useState<Map<string, DeParaRecord>>(new Map())
+  const [lote, setLote] = useState<string>('')
+  const [importando, setImportando] = useState(false)
+  const [importados, setImportados] = useState(0)
 
-  // Modelo de CSV para download
-  const handleDownloadTemplate = () => {
-    const csvContent =
-      'empresa;ano;periodo;conta;descricao;saldo;natureza;linha_bp;linha_dre;cod_nota\n' +
-      'ALFA;2025;Dez/25;1.1.01.001;Caixa Geral Matriz;45000.00;D;Caixa e Equivalentes de Caixa;;03\n' +
-      'ALFA;2025;Dez/25;1.1.01.002;Banco Conta Movimento;280000.00;D;Caixa e Equivalentes de Caixa;;03\n' +
-      'ALFA;2025;Dez/25;1.1.03.001;Clientes a Receber;520000.00;D;Contas a Receber de Clientes;;05\n' +
-      'ALFA;2025;Dez/25;2.1.01.001;Fornecedores Nacionais;380000.00;C;Fornecedores Nacionais e Estrangeiros;;13\n' +
-      'ALFA;2025;Dez/25;2.4.01.001;Capital Social;800000.00;C;Capital Social Subscrito e Integralizado;;21\n' +
-      'ALFA;2025;Dez/25;3.1.01.001;Receita de Vendas;3200000.00;C;;Receita Bruta de Vendas e Serviços;25\n'
-
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', 'modelo_balancete_grupo_abc.csv')
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
-
-  // Processamento do arquivo de texto (CSV delimitado por ; ou , ou tab)
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    setFileName(file.name)
-    setIsProcessing(true)
-    setErrorMsg(null)
-    setImportSummary(null)
-
+  const carregarDepara = useCallback(async () => {
     try {
-      const text = await file.text()
-      // Carrega mapeamento De-Para para preencher automaticamente campos não informados
-      const deparaMap = await deparaService.getMap()
+      setDeparaMap(await loadDeparaMap())
+    } catch {
+      /* depara vazio */
+    }
+  }, [])
 
-      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
-      if (lines.length < 2) {
-        throw new Error('O arquivo selecionado está vazio ou contém apenas o cabeçalho.')
-      }
+  useEffect(() => {
+    carregarDepara()
+  }, [carregarDepara])
 
-      // Identificar separador (; ou , ou tab)
-      const firstLine = lines[0]
-      let sep = ';'
-      if (firstLine.includes(';') && !firstLine.includes('\t')) sep = ';'
-      else if (firstLine.includes('\t')) sep = '\t'
-      else if (firstLine.includes(',') && !firstLine.includes(';')) sep = ','
+  const ehDePara = tipoArquivo === 'depara'
 
-      // Mapear cabeçalhos
-      const headers = lines[0].split(sep).map((h) => h.trim().toLowerCase().replace(/["']/g, ''))
+  const handleSelecionarArquivo = async (file: File | undefined) => {
+    if (!file) return
+    setArquivo(file)
+    setTexto(await file.text())
+    setEtapa('mapear')
+    setFatalError(null)
+    setRowsBalancete([])
 
-      const colIdx = {
-        empresa: headers.findIndex((h) => h.includes('empresa')),
-        ano: headers.findIndex((h) => h.includes('ano')),
-        periodo: headers.findIndex(
-          (h) => h.includes('periodo') || h.includes('período') || h.includes('mes'),
-        ),
-        conta: headers.findIndex(
-          (h) => h.includes('conta') || h.includes('codigo') || h.includes('código'),
-        ),
-        descricao: headers.findIndex(
-          (h) => h.includes('desc') || h.includes('nome') || h.includes('titulo'),
-        ),
-        saldo: headers.findIndex((h) => h.includes('saldo') || h.includes('valor')),
-        natureza: headers.findIndex(
-          (h) => h.includes('nat') || h.includes('d/c') || h.includes('deb_cred'),
-        ),
-        linha_bp: headers.findIndex((h) => h.includes('bp') || h.includes('linha_bp')),
-        linha_dre: headers.findIndex((h) => h.includes('dre') || h.includes('linha_dre')),
-        cod_nota: headers.findIndex((h) => h.includes('nota') || h.includes('cod_nota')),
-      }
+    const bruto = (await file.text()).replace(/^\uFEFF/, '')
+    const primeira = bruto.split(/\r?\n/)[0] ?? ''
+    const sep = primeira.includes(';') ? ';' : ','
+    const hs = primeira.split(sep).map((h) => h.trim().toLowerCase().replace(/["']/g, ''))
+    setHeaders(hs)
+    setColMap(autoDetectColMap(hs))
 
-      const rows: ParsedRow[] = []
-
-      for (let i = 1; i < lines.length; i++) {
-        const rawLine = lines[i].trim()
-        if (!rawLine) continue
-
-        const cols = rawLine.split(sep).map((c) => c.trim().replace(/^["']|["']$/g, ''))
-        const erros: string[] = []
-
-        // Extrai ou usa defaults
-        const emp = (colIdx.empresa >= 0 ? cols[colIdx.empresa] : '') || empresaDefault
-        const anoNum = colIdx.ano >= 0 ? parseInt(cols[colIdx.ano], 10) : parseInt(anoDefault, 10)
-        const ano = isNaN(anoNum) ? parseInt(anoDefault, 10) : anoNum
-        const per = (colIdx.periodo >= 0 ? cols[colIdx.periodo] : '') || periodoDefault
-
-        const conta = colIdx.conta >= 0 ? cols[colIdx.conta] : ''
-        const desc = colIdx.descricao >= 0 ? cols[colIdx.descricao] : ''
-
-        let saldoRaw = colIdx.saldo >= 0 ? cols[colIdx.saldo] : '0'
-        // Tratar formato numérico brasileiro ex 1.234,56 ou 1234.56
-        saldoRaw = saldoRaw.replace(/\./g, '').replace(',', '.')
-        const saldo = parseFloat(saldoRaw)
-
-        let nat = (colIdx.natureza >= 0 ? cols[colIdx.natureza]?.toUpperCase() : '') as 'D' | 'C'
-        if (nat !== 'D' && nat !== 'C') {
-          // Inferir natureza pelo primeiro dígito da conta
-          if (conta.startsWith('1') || (conta.startsWith('3') && !conta.startsWith('3.1'))) {
-            nat = 'D'
-          } else {
-            nat = 'C'
-          }
-        }
-
-        // Validações
-        if (!conta) erros.push('Número da conta ausente')
-        if (!desc) erros.push('Descrição da conta ausente')
-        if (isNaN(saldo)) erros.push('Saldo inválido')
-
-        // De-Para automático
-        const deparaInfo = deparaMap.get(conta.trim())
-        const linha_bp =
-          (colIdx.linha_bp >= 0 ? cols[colIdx.linha_bp] : '') || deparaInfo?.linha_bp || ''
-        const linha_dre =
-          (colIdx.linha_dre >= 0 ? cols[colIdx.linha_dre] : '') || deparaInfo?.linha_dre || ''
-        const cod_nota =
-          (colIdx.cod_nota >= 0 ? cols[colIdx.cod_nota] : '') || deparaInfo?.cod_nota || ''
-
-        rows.push({
-          empresa: emp.toUpperCase(),
-          ano,
-          periodo: per,
-          conta,
-          descricao: desc,
-          saldo: isNaN(saldo) ? 0 : saldo,
-          natureza: nat,
-          linha_bp,
-          linha_dre,
-          cod_nota,
-          erros,
-          isValid: erros.length === 0,
-        })
-      }
-
-      setParsedRows(rows)
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Falha ao processar o arquivo.')
-    } finally {
-      setIsProcessing(false)
+    if (ehDePara) {
+      const r = parseDePara(bruto)
+      setRowsDepara(r.rows)
+      setFatalError(r.fatalError)
+      if (!r.fatalError) setEtapa('previa')
     }
   }
 
-  // Executa a confirmação da importação no banco PocketBase
-  const handleConfirmImport = async () => {
-    const validRows = parsedRows.filter((r) => r.isValid)
-    if (validRows.length === 0) {
-      setErrorMsg('Não há registros válidos para importar.')
+  const validar = () => {
+    if (!colMap || !texto) return
+    if (ehDePara) {
+      const r = parseDePara(texto)
+      setRowsDepara(r.rows)
+      setFatalError(r.fatalError)
+      if (!r.fatalError) setEtapa('previa')
       return
     }
+    const r = parseRows(texto, colMap, defaults, deparaMap)
+    setRowsBalancete(r.rows)
+    setFatalError(r.fatalError)
+    if (!r.fatalError) setEtapa('previa')
+  }
 
-    setIsImporting(true)
-    setErrorMsg(null)
+  const errosBalancete = rowsBalancete.flatMap((r) => r.erros)
+  const alertasBalancete = rowsBalancete.flatMap((r) => r.alertas)
+  const errosDepara = rowsDepara.flatMap((r) => r.erros)
+  const linhasValidas = ehDePara
+    ? rowsDepara.filter((r) => r.isValid)
+    : rowsBalancete.filter((r) => r.isValid)
+  const erros = ehDePara ? errosDepara : errosBalancete
 
+  const contasSemMapeamento = useMemo(
+    () => rowsBalancete.filter((r) => r.isValid && !r.linha_bp && !r.linha_dre),
+    [rowsBalancete],
+  )
+
+  const confirmarImportacao = async () => {
+    if (!arquivo || linhasValidas.length === 0) return
+    setImportando(true)
+    setProgesso(10)
+    const loteAtual = gerarLote()
+    setLote(loteAtual)
     try {
-      const recordsToSave: Omit<BalanceteRecord, 'id' | 'created' | 'updated'>[] = validRows.map(
-        (r) => ({
-          empresa: r.empresa,
-          ano: r.ano,
-          periodo: r.periodo,
-          conta: r.conta,
-          descricao: r.descricao,
-          saldo: r.saldo,
-          natureza: r.natureza,
-          linha_bp: r.linha_bp || '',
-          linha_dre: r.linha_dre || '',
-          cod_nota: r.cod_nota || '',
-        }),
-      )
-
-      const result = await balancetesService.importBatch(recordsToSave, replaceExisting)
-      setImportSummary(result)
-    } catch (err: unknown) {
-      setErrorMsg(
-        err instanceof Error ? err.message : 'Erro ao persistir balancetes no banco de dados.',
-      )
+      if (ehDePara) {
+        const validas = rowsDepara.filter((r) => r.isValid)
+        const res = await importarDeParaLote(
+          validas.map((r) => ({
+            conta: r.conta,
+            descricao: r.descricao,
+            linha_bp: r.linha_bp,
+            linha_dre: r.linha_dre,
+            grupo_bp: r.grupo_bp,
+            cod_nota: r.cod_nota,
+          })),
+        )
+        setImportados(res.criados + res.atualizados)
+      } else {
+        const validas = rowsBalancete.filter((r) => r.isValid)
+        const empresas = Array.from(new Set(validas.map((r) => r.empresa || 'GERAL')))
+        const periodos = Array.from(new Set(validas.map((r) => r.periodo)))
+        let total = 0
+        for (const emp of empresas) {
+          for (const per of periodos) {
+            const linhas = validas.filter(
+              (r) => (r.empresa || 'GERAL') === emp && r.periodo === per,
+            )
+            const anoLinha =
+              linhas[0]?.ano ?? parseInt(defaults.ano, 10) ?? new Date().getFullYear()
+            const gravadas = await importarBalanceteLote(
+              linhas.map((r) => ({
+                empresa: r.empresa || 'GERAL',
+                ano: r.ano,
+                periodo: r.periodo,
+                conta: r.conta,
+                descricao: r.descricao,
+                saldo: r.saldo_final,
+                saldo_inicial: r.saldo_inicial,
+                debitos: r.debitos,
+                creditos: r.creditos,
+                saldo_final: r.saldo_final,
+                natureza: r.natureza,
+                moeda: r.moeda,
+                centro_custo: r.centro_custo,
+                segmento: r.segmento,
+                lote: loteAtual,
+                linha_bp: r.linha_bp,
+                linha_dre: r.linha_dre,
+                cod_nota: r.cod_nota,
+              })),
+              { empresa: emp, ano: anoLinha, periodo: per },
+            )
+            total += gravadas
+          }
+        }
+        setImportados(total)
+      }
+      setProgesso(100)
+      setEtapa('concluido')
+      toast({ title: 'Importação concluída', description: `${importados || 'linhas'} gravadas.` })
+    } catch (e) {
+      toast({
+        title: 'Falha na importação',
+        description: e instanceof Error ? e.message : String(e),
+        variant: 'destructive',
+      })
     } finally {
-      setIsImporting(false)
+      setImportando(false)
     }
   }
 
-  const validCount = parsedRows.filter((r) => r.isValid).length
-  const invalidCount = parsedRows.filter((r) => !r.isValid).length
+  const reiniciar = () => {
+    setArquivo(null)
+    setTexto('')
+    setEtapa('selecionar')
+    setColMap(null)
+    setHeaders([])
+    setRowsBalancete([])
+    setRowsDepara([])
+    setFatalError(null)
+    setImportados(0)
+    setProgesso(0)
+  }
+
+  const baixarModelo = (conteudo: string, nome: string) => {
+    const blob = new Blob(['\uFEFF' + conteudo], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = nome
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            Importar Balancete Contábil
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Envie arquivos em formato CSV ou XLSX para carga e consolidação do período
-          </p>
-        </div>
-
-        <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="text-xs">
-          <Download className="h-4 w-4 mr-1.5" />
-          Baixar Modelo de Planilha
-        </Button>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-xl font-bold tracking-tight">
+          Importação de {ehDePara ? 'De-Para' : 'Balancete'}
+        </h1>
+        <p className="text-xs text-muted-foreground">
+          CSV exportado do Excel (separador ponto-e-vírgula, números 5.756,17, período 2024-08).
+          Prévia obrigatória antes de gravar.
+        </p>
       </div>
 
-      {/* Stepper visual: 6 etapas do fluxo de importação */}
       <ImportStepper
-        etapa={derivarEtapaImportacao({
-          fileName,
-          processando: isProcessing,
-          totalLinhas: parsedRows.length,
-          invalidas: invalidCount,
-          importado: !!importSummary,
-        })}
+        etapa={
+          etapa === 'selecionar'
+            ? 1
+            : etapa === 'mapear'
+              ? 3
+              : etapa === 'concluido'
+                ? 6
+                : erros.length > 0
+                  ? 5
+                  : 4
+        }
       />
 
-      {/* Card de Configurações da Carga */}
-      <Card className="border shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold">Parâmetros Padrão da Carga</CardTitle>
-          <CardDescription className="text-xs">
-            Valores aplicados para linhas que não contenham tais colunas no arquivo importado
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Empresa Padrão</Label>
-              <Select value={empresaDefault} onValueChange={setEmpresaDefault}>
-                <SelectTrigger className="text-xs h-9">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALFA" className="text-xs">
-                    ALFA (Matriz)
-                  </SelectItem>
-                  <SelectItem value="BETA" className="text-xs">
-                    BETA (Filial/Controlada)
-                  </SelectItem>
-                  <SelectItem value="GAMA" className="text-xs">
-                    GAMA
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs">Período de Referência</Label>
-              <Input
-                className="text-xs h-9"
-                value={periodoDefault}
-                onChange={(e) => setPeriodoDefault(e.target.value)}
-                placeholder="Ex: Dez/25 ou 12/2025"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs">Ano Contábil</Label>
-              <Input
-                type="number"
-                className="text-xs h-9"
-                value={anoDefault}
-                onChange={(e) => setAnoDefault(e.target.value)}
-                placeholder="2025"
-              />
-            </div>
-          </div>
-
-          <div className="mt-4 pt-3 border-t flex items-center justify-between">
-            <div className="space-y-0.5">
-              <span className="text-xs font-medium text-foreground">
-                Substituir registros existentes do período/empresa
-              </span>
-              <p className="text-[11px] text-muted-foreground">
-                Evita duplicidade ao reimportar o mesmo mês contábil
-              </p>
-            </div>
-            <Switch checked={replaceExisting} onCheckedChange={setReplaceExisting} />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Área de Seleção de Arquivo */}
-      <Card className="border-dashed border-2 border-border shadow-sm">
-        <CardContent className="py-8 text-center space-y-4">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <UploadCloud className="h-6 w-6" />
-          </div>
-          <div className="space-y-1">
-            <h2 className="text-sm font-semibold">
-              Selecione o arquivo de balancete (CSV ou XLSX)
-            </h2>
-            <p className="text-xs text-muted-foreground max-w-md mx-auto">
-              Separadores aceitos: ponto e vírgula (;), vírgula (,) ou tabulação. O sistema aplicará
-              o De-Para cadastrado automaticamente.
-            </p>
-          </div>
-
-          <div className="flex justify-center">
-            <label className="cursor-pointer">
-              <input
-                type="file"
-                accept=".csv, .txt, text/csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
-              <span className="inline-flex items-center justify-center rounded-md text-xs font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2 shadow-sm">
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                Escolher Arquivo no Computador
-              </span>
-            </label>
-          </div>
-
-          {fileName && (
-            <div className="inline-flex items-center gap-2 text-xs font-mono bg-muted px-3 py-1.5 rounded-md">
-              <FileSpreadsheet className="h-4 w-4 text-primary" />
-              Arquivo selecionado: {fileName}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Alertas e Mensagens */}
-      {errorMsg && (
-        <Alert variant="destructive" className="text-xs">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle className="text-xs font-bold">Erro no arquivo ou na importação</AlertTitle>
-          <AlertDescription>{errorMsg}</AlertDescription>
-        </Alert>
-      )}
-
-      {importSummary && (
-        <Alert className="bg-emerald-50 text-emerald-950 border-emerald-200 text-xs">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          <AlertTitle className="text-xs font-bold text-emerald-900">
-            Importação Concluída com Sucesso!
-          </AlertTitle>
-          <AlertDescription className="space-y-2 mt-1">
-            <p>
-              Foram importadas <strong>{importSummary.imported}</strong> contas contábeis.{' '}
-              {importSummary.replaced > 0 &&
-                `(Registros anteriores substituídos: ${importSummary.replaced})`}
-            </p>
-            <div className="pt-2 flex gap-2">
-              <Button
-                size="sm"
-                variant="default"
-                className="text-xs"
-                onClick={() => navigate('/balancete')}
-              >
-                Ver Balancete Atualizado
-                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-xs"
-                onClick={() => navigate('/balanco-consolidado')}
-              >
-                Ver Balanço Consolidado
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Prévia da Importação e Validação de Campos */}
-      {parsedRows.length > 0 && !importSummary && (
-        <Card className="border shadow-sm">
-          <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                Prévia da Importação ({parsedRows.length} linhas detectadas)
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Revise os campos e as associações De-Para antes de confirmar a persistência
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge
-                variant="outline"
-                className="text-emerald-700 bg-emerald-50 border-emerald-200 text-[11px]"
-              >
-                {validCount} Válidas
-              </Badge>
-              {invalidCount > 0 && (
-                <Badge variant="destructive" className="text-[11px]">
-                  {invalidCount} com Inconsistências
-                </Badge>
-              )}
-            </div>
+      {etapa === 'selecionar' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">1. Selecione o arquivo CSV</CardTitle>
+            <CardDescription>
+              O arquivo pode conter BOM, quebras de linha do Windows, aspas e células vazias.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto max-h-[420px] border-t">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-muted/80 sticky top-0 z-10 text-[10px] text-muted-foreground uppercase font-medium">
-                  <tr>
-                    <th className="py-2.5 px-3">Status</th>
-                    <th className="py-2.5 px-3">Empresa</th>
-                    <th className="py-2.5 px-3">Período</th>
-                    <th className="py-2.5 px-3">Conta</th>
-                    <th className="py-2.5 px-3">Descrição</th>
-                    <th className="py-2.5 px-3 text-right">Saldo</th>
-                    <th className="py-2.5 px-3 text-center">D/C</th>
-                    <th className="py-2.5 px-3">Linha BP Mapeada</th>
-                    <th className="py-2.5 px-3">Linha DRE Mapeada</th>
-                    <th className="py-2.5 px-3">Nota</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {parsedRows.slice(0, 50).map((row, idx) => (
-                    <tr key={idx} className={row.isValid ? 'hover:bg-muted/30' : 'bg-rose-50/60'}>
-                      <td className="py-2 px-3">
-                        {row.isValid ? (
-                          <span className="inline-flex items-center text-emerald-600 font-medium text-[10px] gap-1">
-                            <CheckCircle2 className="h-3 w-3" /> OK
-                          </span>
-                        ) : (
-                          <span
-                            className="inline-flex items-center text-rose-600 font-medium text-[10px] gap-1"
-                            title={row.erros.join(', ')}
-                          >
-                            <AlertTriangle className="h-3 w-3" /> Erro
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 px-3 font-semibold">{row.empresa}</td>
-                      <td className="py-2 px-3">{row.periodo}</td>
-                      <td className="py-2 px-3 font-mono text-[11px] font-medium">{row.conta}</td>
-                      <td className="py-2 px-3 max-w-[200px] truncate" title={row.descricao}>
-                        {row.descricao}
-                      </td>
-                      <td className="py-2 px-3 text-right font-medium">
-                        {new Intl.NumberFormat('pt-BR', {
-                          style: 'currency',
-                          currency: 'BRL',
-                        }).format(row.saldo)}
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <Badge variant="outline" className="text-[10px] px-1 py-0">
-                          {row.natureza}
-                        </Badge>
-                      </td>
-                      <td className="py-2 px-3 text-muted-foreground text-[11px]">
-                        {row.linha_bp || <span className="text-amber-600 italic">Sem BP</span>}
-                      </td>
-                      <td className="py-2 px-3 text-muted-foreground text-[11px]">
-                        {row.linha_dre || '-'}
-                      </td>
-                      <td className="py-2 px-3 text-muted-foreground text-[10px]">
-                        {row.cod_nota || '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="arquivo-csv">Arquivo CSV</Label>
+              <Input
+                id="arquivo-csv"
+                type="file"
+                accept=".csv,.txt,text/csv"
+                onChange={(e) => handleSelecionarArquivo(e.target.files?.[0])}
+              />
             </div>
-            {parsedRows.length > 50 && (
-              <div className="p-2 text-center text-[11px] text-muted-foreground bg-muted/20 border-t">
-                Exibindo primeiras 50 de {parsedRows.length} linhas. Todas as linhas válidas serão
-                importadas.
+
+            {!ehDePara && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="def-empresa">Empresa padrão</Label>
+                  <Input
+                    id="def-empresa"
+                    value={defaults.empresa}
+                    onChange={(e) =>
+                      setDefaults({ ...defaults, empresa: e.target.value.toUpperCase() })
+                    }
+                    placeholder="ALFA"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="def-periodo">Período padrão</Label>
+                  <Input
+                    id="def-periodo"
+                    value={defaults.periodo}
+                    onChange={(e) => setDefaults({ ...defaults, periodo: e.target.value })}
+                    placeholder="2024-08"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="def-ano">Ano padrão</Label>
+                  <Input
+                    id="def-ano"
+                    value={defaults.ano}
+                    onChange={(e) => setDefaults({ ...defaults, ano: e.target.value })}
+                    placeholder="2024"
+                    inputMode="numeric"
+                  />
+                </div>
               </div>
             )}
-          </CardContent>
-          <CardFooter className="py-3 px-4 border-t bg-muted/10 flex items-center justify-between">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setParsedRows([])
-                setFileName(null)
-              }}
-              className="text-xs text-muted-foreground"
-            >
-              <Trash2 className="h-3.5 w-3.5 mr-1 text-rose-500" />
-              Cancelar e Limpar
-            </Button>
 
-            <Button
-              size="sm"
-              onClick={handleConfirmImport}
-              disabled={validCount === 0 || isImporting}
-              className="text-xs font-semibold"
-            >
-              {isImporting ? (
-                <>
-                  <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  Gravando Balancetes...
-                </>
-              ) : (
-                <>
-                  Confirmar e Importar {validCount} Contas
-                  <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
-                </>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => baixarModelo(CSV_MODELO_BALANCETE, 'modelo-balancete.csv')}
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-1.5" /> Baixar modelo balancete
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => baixarModelo(CSV_MODELO_DEPARA, 'modelo-depara.csv')}
+              >
+                <FileSpreadsheet className="h-4 w-4 mr-1.5" /> Baixar modelo De-Para
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {etapa === 'mapear' && colMap && !ehDePara && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">2. Conferência das colunas detectadas</CardTitle>
+            <CardDescription>
+              Arquivo: {arquivo?.name}. Confirme para validar as {rowsBalancete.length || '...'}{' '}
+              linhas.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {(
+                [
+                  ['empresa', 'Empresa'],
+                  ['ano', 'Ano'],
+                  ['periodo', 'Período'],
+                  ['conta', 'Conta'],
+                  ['descricao', 'Descrição'],
+                  ['saldo_inicial', 'Saldo Inicial'],
+                  ['debitos', 'Débitos'],
+                  ['creditos', 'Créditos'],
+                  ['saldo_final', 'Saldo Final'],
+                  ['natureza', 'Natureza'],
+                  ['moeda', 'Moeda'],
+                  ['centro_custo', 'Centro de Custo'],
+                  ['segmento', 'Segmento'],
+                  ['linha_bp', 'Linha BP'],
+                  ['linha_dre', 'Linha DRE'],
+                  ['cod_nota', 'Cod. Nota'],
+                ] as Array<[keyof ColumnMap, string]>
+              ).map(([key, label]) => (
+                <div key={key} className="space-y-1">
+                  <Label className="text-[11px]">{label}</Label>
+                  <Select
+                    value={String(colMap[key])}
+                    onValueChange={(v) => setColMap({ ...colMap, [key]: parseInt(v, 10) })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="-1" className="text-xs">
+                        (não usar)
+                      </SelectItem>
+                      {headers.map((h, i) => (
+                        <SelectItem key={i} value={String(i)} className="text-xs">
+                          {i + 1}. {h}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={validar}>
+                Validar e ver prévia
+              </Button>
+              <Button variant="ghost" size="sm" onClick={reiniciar}>
+                Trocar arquivo
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {etapa === 'previa' && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                3. Prévia — {linhasValidas.length} linhas prontas para gravar
+              </CardTitle>
+              <CardDescription>
+                {ehDePara
+                  ? 'Mapeamento substitui o anterior conta a conta, sem duplicar.'
+                  : 'Reimportar o mesmo período substitui os valores, sem duplicar contas.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {fatalError && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Arquivo rejeitado</AlertTitle>
+                  <AlertDescription>{fatalError}</AlertDescription>
+                </Alert>
               )}
+              {erros.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>{erros.length} erro(s) de validação</AlertTitle>
+                  <AlertDescription>
+                    <ul className="list-disc pl-4 space-y-0.5 max-h-40 overflow-y-auto">
+                      {erros.slice(0, 30).map((e, i) => (
+                        <li key={i}>
+                          <b>Linha {e.linha}</b>, coluna <b>{e.coluna}</b>: {e.msg}
+                        </li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+              {alertasBalancete.length > 0 && (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>{alertasBalancete.length} alerta(s) de conferência</AlertTitle>
+                  <AlertDescription>
+                    <ul className="list-disc pl-4 space-y-0.5 max-h-40 overflow-y-auto">
+                      {alertasBalancete.slice(0, 30).map((e, i) => (
+                        <li key={i}>
+                          <b>Linha {e.linha}</b>, coluna <b>{e.coluna}</b>: {e.msg}
+                        </li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+              {!fatalError && erros.length === 0 && (
+                <Alert>
+                  <CheckCircle2 className="h-4 w-4" />
+                  <AlertTitle>Tudo validado</AlertTitle>
+                  <AlertDescription>
+                    Nenhum erro.{' '}
+                    {ehDePara
+                      ? 'Pronto para substituir o mapeamento.'
+                      : 'Pronto para gravar os 4 saldos por conta.'}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {!ehDePara && contasSemMapeamento.length > 0 && (
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>{contasSemMapeamento.length} conta(s) sem mapeamento</AlertTitle>
+                  <AlertDescription>
+                    Elas serão gravadas, mas não entram no Balanço até serem classificadas no
+                    De-Para:
+                    <ul className="list-disc pl-4 mt-1">
+                      {contasSemMapeamento.slice(0, 10).map((r) => (
+                        <li key={r.linhaArquivo}>
+                          {r.conta} — {r.descricao}
+                        </li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {erros.length === 0 && !fatalError && linhasValidas.length > 0 && (
+                <div className="border rounded-lg overflow-x-auto max-h-80 overflow-y-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-muted">
+                      <TableRow>
+                        <TableHead className="text-xs">Linha</TableHead>
+                        {ehDePara ? (
+                          <>
+                            <TableHead className="text-xs">Conta</TableHead>
+                            <TableHead className="text-xs">Descrição</TableHead>
+                            <TableHead className="text-xs">LinhaBP</TableHead>
+                            <TableHead className="text-xs">LinhaDRE</TableHead>
+                            <TableHead className="text-xs">Grupo_BP</TableHead>
+                            <TableHead className="text-xs">Cod_Nota</TableHead>
+                          </>
+                        ) : (
+                          <>
+                            <TableHead className="text-xs">Empresa</TableHead>
+                            <TableHead className="text-xs">Conta</TableHead>
+                            <TableHead className="text-xs">Descrição</TableHead>
+                            <TableHead className="text-xs text-right">Saldo Inicial</TableHead>
+                            <TableHead className="text-xs text-right">Débitos</TableHead>
+                            <TableHead className="text-xs text-right">Créditos</TableHead>
+                            <TableHead className="text-xs text-right">Saldo Final</TableHead>
+                            <TableHead className="text-xs text-center">Nat</TableHead>
+                          </>
+                        )}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(ehDePara ? rowsDepara : rowsBalancete).slice(0, 100).map((r) => (
+                        <TableRow
+                          key={r.linhaArquivo}
+                          className={r.isValid ? '' : 'bg-destructive/5'}
+                        >
+                          <TableCell className="text-xs font-mono">{r.linhaArquivo}</TableCell>
+                          {'conta' in r && (
+                            <>
+                              <TableCell className="text-xs font-mono">{r.conta}</TableCell>
+                              <TableCell className="text-xs max-w-[220px] truncate">
+                                {r.descricao}
+                              </TableCell>
+                              {'linha_bp' in r && (
+                                <>
+                                  <TableCell className="text-xs">{r.linha_bp || '—'}</TableCell>
+                                  <TableCell className="text-xs">{r.linha_dre || '—'}</TableCell>
+                                  {'grupo_bp' in r && (
+                                    <TableCell className="text-xs">{r.grupo_bp || '—'}</TableCell>
+                                  )}
+                                  <TableCell className="text-xs">{r.cod_nota || '—'}</TableCell>
+                                </>
+                              )}
+                              {'saldo_inicial' in r && (
+                                <>
+                                  <TableCell className="text-xs text-right font-mono">
+                                    {formatMoeda((r as ParsedRow).saldo_inicial)}
+                                  </TableCell>
+                                  <TableCell className="text-xs text-right font-mono">
+                                    {formatMoeda((r as ParsedRow).debitos)}
+                                  </TableCell>
+                                  <TableCell className="text-xs text-right font-mono">
+                                    {formatMoeda((r as ParsedRow).creditos)}
+                                  </TableCell>
+                                  <TableCell className="text-xs text-right font-mono font-semibold">
+                                    {formatMoeda((r as ParsedRow).saldo_final)}
+                                  </TableCell>
+                                  <TableCell className="text-xs text-center">
+                                    <Badge variant="outline">{(r as ParsedRow).natureza}</Badge>
+                                  </TableCell>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              <Separator />
+              <div className="flex flex-wrap gap-2 items-center">
+                <Button
+                  onClick={confirmarImportacao}
+                  disabled={
+                    importando || erros.length > 0 || !!fatalError || linhasValidas.length === 0
+                  }
+                >
+                  {importando
+                    ? 'Gravando...'
+                    : `Confirmar importação (${linhasValidas.length} linhas)`}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setEtapa('selecionar')}
+                  disabled={importando}
+                >
+                  Voltar
+                </Button>
+              </div>
+              {importando && <Progress value={progesso} />}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {etapa === 'concluido' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" /> Importação concluída
+            </CardTitle>
+            <CardDescription>
+              {importados} linha(s) gravada(s) no lote {lote || '—'}.
+              {user?.email ? ` Operador: ${user.email}.` : ''}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex gap-2">
+            <Button size="sm" onClick={reiniciar}>
+              Importar outro arquivo
             </Button>
-          </CardFooter>
+          </CardContent>
         </Card>
       )}
     </div>
   )
 }
+
 export default ImportarBalancete
