@@ -6,11 +6,13 @@
 //
 // Regras:
 // - IDEMPOTENTE: execução repetida apaga apenas os registros gerados por esta migração
-//   (balancetes com lote = 'SEED-ABC-0005') e refaz o upsert, sem tocar em dados de outras origens.
+//   (balancetes com lote = 'SEED-ABC-0005' e os leftovers de seed sem lote) e refaz o upsert,
+//   sem tocar em dados de outras origens (importações do usuário, lote IMP-...).
 // - De-Para: upsert pela conta (índice único idx_depara_conta).
-// - Balancete: grava as 4 colunas de saldo (saldo_inicial, debitos, creditos, saldo_final) e faz
-//   upsert por (empresa, periodo, conta) — índice único idx_balancetes_emp_per_conta; reimportar
-//   o mesmo período substitui, nunca duplica.
+// - Balancete: grava as 4 colunas de saldo (saldo_inicial, debitos, creditos, saldo_final),
+//   o período no MESMO formato que a tela Balancete filtra ("Dez/25") e faz upsert por
+//   (empresa, periodo, conta) — índice único idx_balancetes_emp_per_conta; reimportar o mesmo
+//   período substitui, nunca duplica.
 // - Registros legados de seed (lote vazio, criados pela migração 0002) são removidos do balancete
 //   para que a ferramenta reflita somente os dados reais; importaçōes do usuário (lote IMP-...)
 //   são preservadas. O usuário auth não é tocado.
@@ -21,48 +23,34 @@ var URL_DEPARA =
 var URL_BALANCETE =
   'https://dagtlwojkqyivnjgveda.supabase.co/storage/v1/object/public/message-attachments/1a7168f1-da38-41b7-afb4-96471c0e0400/balancete-8d6fe.csv'
 
-function bodyToText(res) {
-  var b = res.body
-  if (b == null) return ''
-  if (typeof b === 'string') return b
-  // Go []byte chega como array de números (ou array-like) no JSVM
-  try {
-    if (typeof b.length === 'number' && typeof b.charCodeAt !== 'function') {
-      var s = ''
-      for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i] & 0xff)
-      return s
-    }
-  } catch (_) {}
-  return String(b)
+var MESES = {
+  jan: 1,
+  fev: 2,
+  mar: 3,
+  abr: 4,
+  mai: 5,
+  jun: 6,
+  jul: 7,
+  ago: 8,
+  set: 9,
+  out: 10,
+  nov: 11,
+  dez: 12,
 }
-
-function httpGetText(url) {
-  var res = $http.send({
-    url: url,
-    method: 'GET',
-    headers: { Accept: 'text/csv, text/plain, */*' },
-  })
-  if (res.statusCode >= 400) {
-    throw new Error('Falha ao baixar o arquivo de origem (HTTP ' + res.statusCode + '): ' + url)
-  }
-  var texto = bodyToText(res)
-  if (!texto || texto.replace(/^\uFEFF/, '').trim().length === 0) {
-    throw new Error(
-      'Corpo vazio ao baixar ' +
-        url +
-        ' | status=' +
-        res.statusCode +
-        ' | tipoBody=' +
-        typeof res.body +
-        (res.body && typeof res.body.length === 'number' ? ' | len=' + res.body.length : '') +
-        ' | contentType=' +
-        ((res.headers && res.headers.get && res.headers.get('Content-Type')) ||
-          (res.headers && res.headers['Content-Type']) ||
-          '?'),
-    )
-  }
-  return texto
-}
+var ABREVIACOES = [
+  'Jan',
+  'Fev',
+  'Mar',
+  'Abr',
+  'Mai',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Set',
+  'Out',
+  'Nov',
+  'Dez',
+]
 
 function normalizarTexto(t) {
   return String(t || '')
@@ -107,6 +95,27 @@ function parseValorBr(raw) {
   return isNaN(v) ? 0 : v
 }
 
+// Latim-1 → UTF-8: o CSV vem em ISO-8859-1 ("Descri��o"); String.fromCharCode
+// degrada acentos para mojibake, então refazemos a decodificação byte a byte
+// e depois normalizamos para a comparação de cabeçalhos.
+function latin1ParaUtf8(raw) {
+  var s = String(raw || '')
+  var out = ''
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i)
+    if (c >= 0xc2 && c <= 0xf4 && i + 1 < s.length) {
+      // byte alto + continuação: junta dois bytes (UTF-8 decodificado como latin-1)
+      out += String.fromCharCode(((c & 0x1f) << 6) | (s.charCodeAt(i + 1) & 0x3f))
+      i++
+    } else if (c < 0x80) {
+      out += s.charAt(i)
+    } else {
+      out += '\uFFFD'
+    }
+  }
+  return out
+}
+
 function normalizarHeader(h) {
   var s = String(h || '')
     .trim()
@@ -130,46 +139,32 @@ function findCol(headers, aliases) {
   return -1
 }
 
-var MESES = {
-  jan: 1,
-  fev: 2,
-  mar: 3,
-  abr: 4,
-  mai: 5,
-  jun: 6,
-  jul: 7,
-  ago: 8,
-  set: 9,
-  out: 10,
-  nov: 11,
-  dez: 12,
+function upper(s) {
+  return String(s || '')
+    .trim()
+    .toUpperCase()
 }
 
-/** Aceita "2024-08", "08/2024", "Dez/2024", "2024" e devolve {ano, periodo:"YYYY-MM"}. */
+/** Converte a competência do CSV ("2024-08", "08/2024", "Dez/2024", "2024")
+ *  para o formato que a tela Balancete exibe e filtra: "Dez/25". */
 function parsePeriodo(raw) {
   var t = String(raw || '').trim()
   var m = t.match(/^(\d{4})[-\/](\d{1,2})$/)
-  if (m) return { ano: +m[1], periodo: m[1] + '-' + ('0' + +m[2]).slice(-2) }
+  if (m) return { ano: +m[1], mes: +m[2] }
   m = t.match(/^(\d{1,2})[-\/](\d{4})$/)
-  if (m) return { ano: +m[2], periodo: m[2] + '-' + ('0' + +m[1]).slice(-2) }
+  if (m) return { ano: +m[2], mes: +m[1] }
   m = t.match(/^([A-Za-zÀ-ú]{3,})[-\/\s]?(\d{2,4})$/)
   if (m) {
     var chave = m[1].toLowerCase().slice(0, 3)
     var mes = MESES[chave]
     if (mes) {
       var anoFull = m[2].length === 2 ? 2000 + +m[2] : +m[2]
-      return { ano: anoFull, periodo: anoFull + '-' + ('0' + mes).slice(-2) }
+      return { ano: anoFull, mes: mes }
     }
   }
   m = t.match(/^(\d{4})$/)
-  if (m) return { ano: +m[1], periodo: m[1] + '-12' }
-  return { ano: NaN, periodo: t }
-}
-
-function upper(s) {
-  return String(s || '')
-    .trim()
-    .toUpperCase()
+  if (m) return { ano: +m[1], mes: 12 }
+  return { ano: NaN, mes: NaN }
 }
 
 migrate(
@@ -190,28 +185,44 @@ migrate(
     for (var d = 0; d < antigos.length; d++) app.delete(antigos[d])
 
     // ---- 1. De-Para (upsert pela conta) -----------------------------------
-    var textoDep = httpGetText(URL_DEPARA)
+    var resDep = $http.send({
+      url: URL_DEPARA,
+      method: 'GET',
+      headers: { Accept: 'text/csv, text/plain, */*' },
+    })
+    if (resDep.statusCode >= 400) {
+      throw new Error('Falha ao baixar o De-Para (HTTP ' + resDep.statusCode + ')')
+    }
+    var textoDep = latin1ParaUtf8(resDep.raw || '')
+    if (textoDep.trim().length === 0) {
+      throw new Error('Corpo vazio ao baixar o CSV do De-Para (raw e body vazios)')
+    }
     var linhasDep = normalizarTexto(textoDep)
       .split('\n')
       .filter(function (l) {
         return l.trim().length > 0
       })
-    if (linhasDep.length < 2) throw new Error('CSV do De-Para veio vazio: ' + URL_DEPARA)
+    if (linhasDep.length < 2) throw new Error('CSV do De-Para veio sem registros: ' + URL_DEPARA)
 
     var sepDep = linhasDep[0].indexOf(';') >= 0 ? ';' : ','
     var headersDep = splitCsvLine(linhasDep[0], sepDep)
     var ixContaDep = findCol(headersDep, ['conta'])
     var ixDescDep = findCol(headersDep, ['descricao'])
-    var ixBpDep = findCol(headersDep, ['linhabp', 'linha bp'])
-    var ixDreDep = findCol(headersDep, ['linhadre', 'linha dre'])
-    var ixGrupoDep = findCol(headersDep, ['grupobp', 'grupo bp'])
-    var ixNotaDep = findCol(headersDep, ['codnota', 'cod nota', 'nota'])
+    var ixBpDep = findCol(headersDep, ['linhabp', 'linhadr'])
+    var ixDreDep = findCol(headersDep, ['linhadr'])
+    var ixGrupoDep = findCol(headersDep, ['grupobp'])
+    var ixNotaDep = findCol(headersDep, ['codnota'])
     if (ixContaDep < 0 || ixDescDep < 0) {
-      throw new Error('Cabeçalho do De-Para sem as colunas Conta/Descrição: ' + linhasDep[0])
+      var depNorm = []
+      for (var hh = 0; hh < headersDep.length; hh++) depNorm.push(normalizarHeader(headersDep[hh]))
+      throw new Error(
+        'Cabeçalho do De-Para sem as colunas Conta/Descrição — normalizados: ' +
+          JSON.stringify(depNorm),
+      )
     }
 
     // Mapa das contas existentes (562 no CSV + seeds antigos → carregável em memória)
-    var depExistentes = app.findRecordsByFilter(depCol, '', 'conta', 1000000, 0)
+    var depExistentes = app.findRecordsByFilter(depCol, '', 'conta', 100000, 0)
     var depPorConta = {}
     for (var e = 0; e < depExistentes.length; e++) {
       depPorConta[upper(depExistentes[e].getString('conta'))] = depExistentes[e]
@@ -261,13 +272,25 @@ migrate(
     }
 
     // ---- 2. Balancete (4 saldos + upsert por empresa+periodo+conta) --------
-    var textoBal = httpGetText(URL_BALANCETE)
+    var resBal = $http.send({
+      url: URL_BALANCETE,
+      method: 'GET',
+      headers: { Accept: 'text/csv, text/plain, */*' },
+    })
+    if (resBal.statusCode >= 400) {
+      throw new Error('Falha ao baixar o Balancete (HTTP ' + resBal.statusCode + ')')
+    }
+    var textoBal = latin1ParaUtf8(resBal.raw || '')
+    if (textoBal.trim().length === 0) {
+      throw new Error('Corpo vazio ao baixar o CSV do Balancete (raw e body vazios)')
+    }
     var linhasBal = normalizarTexto(textoBal)
       .split('\n')
       .filter(function (l) {
         return l.trim().length > 0
       })
-    if (linhasBal.length < 2) throw new Error('CSV do Balancete veio vazio: ' + URL_BALANCETE)
+    if (linhasBal.length < 2)
+      throw new Error('CSV do Balancete veio sem registros: ' + URL_BALANCETE)
 
     var sepBal = linhasBal[0].indexOf(';') >= 0 ? ';' : ','
     var headersBal = splitCsvLine(linhasBal[0], sepBal)
@@ -285,7 +308,7 @@ migrate(
     }
 
     // Restantes no banco = somente importaçōes do usuário (lotes IMP-...).
-    var restantes = app.findRecordsByFilter(balCol, "lote != ''", '', 1000000, 0)
+    var restantes = app.findRecordsByFilter(balCol, "lote != ''", '', 100000, 0)
     var balPorChave = {}
     for (var r = 0; r < restantes.length; r++) {
       var rec = restantes[r]
@@ -309,12 +332,12 @@ migrate(
 
       var textoPeriodo = ixPer >= 0 ? (cb[ixPer] || '').trim() : ''
       var parsed = parsePeriodo(textoPeriodo)
-      var periodo = parsed.periodo
+      var mes = parsed.mes
       var ano = NaN
       if (ixAno >= 0) ano = parseInt((cb[ixAno] || '').trim(), 10)
       if (isNaN(ano)) ano = parsed.ano
-      if (isNaN(ano)) ano = 0
-      if (!periodo) periodo = 'SEM-PERIODO'
+      if (isNaN(ano) || isNaN(mes)) continue // linha sem competência válida não é gravada
+      var periodo = ABREVIACOES[mes - 1] + '/' + String(ano % 100).padStart(2, '0')
 
       var saldoInicial = ixSalIni >= 0 ? parseValorBr(cb[ixSalIni]) : 0
       var debitos = ixDeb >= 0 ? parseValorBr(cb[ixDeb]) : 0
@@ -374,6 +397,16 @@ migrate(
         balPorChave[chaveB] = novoBal
       }
       totalBal++
+    }
+
+    if (totalDep < 500 || totalBal < 20000) {
+      throw new Error(
+        'Carga ABC incompleta: de_para=' +
+          totalDep +
+          ' (esperado ~562), balancete=' +
+          totalBal +
+          ' (esperado ~24.6 mil) — nada foi persistido',
+      )
     }
 
     console.log(
