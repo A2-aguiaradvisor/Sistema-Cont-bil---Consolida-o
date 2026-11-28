@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-27T13:06:07.766Z",
+  "generatedAt": "2026-11-28T14:20:07.364Z",
   "collections": [
     {
       "name": "users",
@@ -29,14 +29,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         }
       ],
       "indexes": [
@@ -60,7 +65,10 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["BP", "DRE"]
+          "selectValues": [
+            "BP",
+            "DRE"
+          ]
         },
         {
           "name": "grupo",
@@ -97,7 +105,10 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["D", "C"]
+          "selectValues": [
+            "D",
+            "C"
+          ]
         },
         {
           "name": "is_total",
@@ -110,14 +121,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         }
       ],
       "indexes": [
@@ -177,7 +193,12 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["ATIVO", "PASSIVO", "PL", "RESULTADO"]
+          "selectValues": [
+            "ATIVO",
+            "PASSIVO",
+            "PL",
+            "RESULTADO"
+          ]
         },
         {
           "name": "observacao",
@@ -190,14 +211,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         }
       ],
       "indexes": [
@@ -258,7 +284,10 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["D", "C"]
+          "selectValues": [
+            "D",
+            "C"
+          ]
         },
         {
           "name": "linha_bp",
@@ -283,14 +312,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "saldo_inicial",
@@ -381,7 +415,10 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["BP", "DRE"]
+          "selectValues": [
+            "BP",
+            "DRE"
+          ]
         },
         {
           "name": "linha_balanco",
@@ -418,17 +455,24 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         }
       ],
-      "indexes": ["CREATE INDEX idx_elim_periodo_tipo ON eliminacoes (periodo, tipo_quadro)"]
+      "indexes": [
+        "CREATE INDEX idx_elim_periodo_tipo ON eliminacoes (periodo, tipo_quadro)"
+      ]
     }
   ]
 }
